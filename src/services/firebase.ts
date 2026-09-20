@@ -48,18 +48,25 @@ export const db = (firebaseConfig as any).firestoreDatabaseId
   : getFirestore(app);
 export const auth = getAuth(app);
 
-// Workspace OAuth Scopes for Google Sheets & Google Drive
+// Workspace OAuth Scopes for Google Sheets & Google Drive (requested on-demand only)
 export const WORKSPACE_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.file',
 ];
 
-// Configure standard Google Auth Provider
+// Configure standard Google Auth Provider for basic user login (email, profile, openid)
+// Standard login does NOT request sensitive Sheets scopes to avoid Error 403: access_denied
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
-WORKSPACE_SCOPES.forEach((scope) => googleProvider.addScope(scope));
+
+// Configure on-demand Google Sheets Provider (used ONLY when user clicks sync/build Google Sheet)
+export const googleSheetsProvider = new GoogleAuthProvider();
+googleSheetsProvider.setCustomParameters({
+  prompt: 'consent',
+});
+WORKSPACE_SCOPES.forEach((scope) => googleSheetsProvider.addScope(scope));
 
 // In-Memory cache for the Google OAuth access token (never persisted to localStorage)
 let cachedGoogleAccessToken: string | null = null;
@@ -76,13 +83,22 @@ export async function getOrRequestGoogleAccessToken(): Promise<string> {
   if (cachedGoogleAccessToken) {
     return cachedGoogleAccessToken;
   }
-  const result = await signInWithPopup(auth, googleProvider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  if (!credential?.accessToken) {
-    throw new Error('Google Sheets permission was not granted. Please sign in and allow access.');
+  try {
+    const result = await signInWithPopup(auth, googleSheetsProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Google Sheets permission was not granted. Please allow access.');
+    }
+    cachedGoogleAccessToken = credential.accessToken;
+    return cachedGoogleAccessToken;
+  } catch (error: any) {
+    if (error?.message?.includes('access_denied') || error?.code === 'auth/popup-closed-by-user') {
+      throw new Error(
+        'Google Sheets access was denied. If your Google Cloud OAuth consent screen is in Testing mode, ensure your email is added under "Test Users" in Google Cloud Console, or publish the app to Production.'
+      );
+    }
+    throw error;
   }
-  cachedGoogleAccessToken = credential.accessToken;
-  return cachedGoogleAccessToken;
 }
 
 export enum OperationType {

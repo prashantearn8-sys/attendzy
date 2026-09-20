@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Global Safety Net: Default-deny all unspecified document paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // Health check test connection rule
     match /test/connection {
       allow read: if true;
@@ -12,12 +17,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
-    }
-
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && isValidId(userId) && request.auth.uid == userId;
     }
 
     // User Root Document & Subcollections
@@ -28,26 +33,27 @@ service cloud.firestore {
       // Subjects Subcollection
       // Path: /users/{userId}/subjects/{subjectId}
       match /subjects/{subjectId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) && isValidId(subjectId);
       }
 
       // Timetables Subcollection
       // Path: /users/{userId}/timetables/{timetableId}
       match /timetables/{timetableId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) && isValidId(timetableId);
       }
 
       // Daily Attendance Subcollection
       // Path: /users/{userId}/attendance/{date}
       match /attendance/{date} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) && isValidId(date);
       }
 
       // Legacy fallback subcollection for app backwards compatibility
       match /attendance_data/{dataId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) && isValidId(dataId);
       }
     }
   }
 }
+
 
