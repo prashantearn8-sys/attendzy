@@ -13,8 +13,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return (request.auth != null && request.auth.uid == userId) ||
-             (userId is string && userId.size() > 0 && userId.size() <= 128 && (userId.matches('guest_.*') || userId == 'student_nishant'));
+      return request.auth != null && request.auth.uid == userId;
     }
 
     function isValidId(id) {

@@ -265,6 +265,9 @@ export async function buildAndPersistUserProfile(fbUser: FirebaseUser): Promise<
     }
     await setDoc(userRef, profile, { merge: true });
     localStorage.setItem('attendzy_auth_user', JSON.stringify(profile));
+
+    // Migrate any guest state into Firestore seamlessly
+    await migrateGuestDataToFirebase(fbUser.uid);
   } catch (err) {
     console.warn('User profile sync warning:', err);
   }
@@ -273,17 +276,128 @@ export async function buildAndPersistUserProfile(fbUser: FirebaseUser): Promise<
 }
 
 /**
+ * Check if the userId represents an unauthenticated guest session
+ */
+export function isGuestUser(userId?: string | null): boolean {
+  if (!userId) return true;
+  if (userId.startsWith('guest_') || userId === 'student_nishant') return true;
+  return false;
+}
+
+/* =========================================================================
+   GUEST LOCAL STORAGE LAYER
+   Provides instant offline-first capabilities for unauthenticated users
+   without sending requests or triggering permission errors against Firestore.
+   ========================================================================= */
+
+const GUEST_SUBJECTS_KEY = 'attendzy_guest_subjects';
+const GUEST_TIMETABLES_KEY = 'attendzy_guest_timetables';
+const GUEST_ATTENDANCE_KEY = 'attendzy_guest_attendance';
+
+export function getGuestSubjects(): Subject[] {
+  try {
+    const raw = localStorage.getItem(GUEST_SUBJECTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setGuestSubjects(subjects: Subject[]): void {
+  try {
+    localStorage.setItem(GUEST_SUBJECTS_KEY, JSON.stringify(subjects));
+    window.dispatchEvent(new CustomEvent('attendzy_guest_data_changed'));
+  } catch (e) {
+    console.warn('Failed to save guest subjects:', e);
+  }
+}
+
+export function getGuestTimetables(): Timetable[] {
+  try {
+    const raw = localStorage.getItem(GUEST_TIMETABLES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setGuestTimetables(timetables: Timetable[]): void {
+  try {
+    localStorage.setItem(GUEST_TIMETABLES_KEY, JSON.stringify(timetables));
+    window.dispatchEvent(new CustomEvent('attendzy_guest_data_changed'));
+  } catch (e) {
+    console.warn('Failed to save guest timetables:', e);
+  }
+}
+
+export function getGuestAttendanceDocs(): AttendanceDayDoc[] {
+  try {
+    const raw = localStorage.getItem(GUEST_ATTENDANCE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setGuestAttendanceDocs(docs: AttendanceDayDoc[]): void {
+  try {
+    localStorage.setItem(GUEST_ATTENDANCE_KEY, JSON.stringify(docs));
+    window.dispatchEvent(new CustomEvent('attendzy_guest_data_changed'));
+  } catch (e) {
+    console.warn('Failed to save guest attendance docs:', e);
+  }
+}
+
+export async function migrateGuestDataToFirebase(authUserId: string): Promise<void> {
+  if (!authUserId || isGuestUser(authUserId)) return;
+  try {
+    const guestSubjects = getGuestSubjects();
+    const guestTimetables = getGuestTimetables();
+    const guestAttendance = getGuestAttendanceDocs();
+
+    if (guestSubjects.length > 0) {
+      for (const s of guestSubjects) {
+        await saveSubject(authUserId, s);
+      }
+      localStorage.removeItem(GUEST_SUBJECTS_KEY);
+    }
+
+    if (guestTimetables.length > 0) {
+      for (const t of guestTimetables) {
+        await saveTimetable(authUserId, t);
+      }
+      localStorage.removeItem(GUEST_TIMETABLES_KEY);
+    }
+
+    if (guestAttendance.length > 0) {
+      await batchSaveAttendanceDocs(authUserId, guestAttendance);
+      localStorage.removeItem(GUEST_ATTENDANCE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent('attendzy_guest_data_changed'));
+  } catch (e) {
+    console.warn('Failed to migrate guest data to Firestore:', e);
+  }
+}
+
+/**
  * Update UserProfile in Firestore and Local Storage
  */
 export async function updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<void> {
+  const cached = localStorage.getItem('attendzy_auth_user');
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      localStorage.setItem('attendzy_auth_user', JSON.stringify({ ...parsed, ...updates }));
+    } catch {}
+  }
+
+  if (isGuestUser(userId)) {
+    return;
+  }
+
   try {
     const userRef = doc(db, 'users', userId);
     await setDoc(userRef, updates, { merge: true });
-    const cached = localStorage.getItem('attendzy_auth_user');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      localStorage.setItem('attendzy_auth_user', JSON.stringify({ ...parsed, ...updates }));
-    }
   } catch (err) {
     console.warn('Update user profile warning:', err);
   }
@@ -294,6 +408,9 @@ export async function updateUserProfile(userId: string, updates: Partial<UserPro
    ========================================================================= */
 
 export async function fetchSubjects(userId: string): Promise<Subject[]> {
+  if (isGuestUser(userId)) {
+    return getGuestSubjects();
+  }
   const path = `users/${userId}/subjects`;
   try {
     const snap = await getDocs(collection(db, 'users', userId, 'subjects'));
@@ -307,14 +424,26 @@ export function subscribeToSubjects(
   userId: string,
   onUpdate: (subjects: Subject[]) => void
 ): () => void {
-  const path = `users/${userId}/subjects`;
-  const isRegistered = Boolean(userId && !userId.startsWith('guest_') && userId !== 'student_nishant');
+  if (isGuestUser(userId)) {
+    onUpdate(getGuestSubjects());
+    const handleUpdate = () => {
+      onUpdate(getGuestSubjects());
+    };
+    window.addEventListener('attendzy_guest_data_changed', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('attendzy_guest_data_changed', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }
 
+  const path = `users/${userId}/subjects`;
   let unsubscribeSnapshot: (() => void) | null = null;
   let isCancelled = false;
 
   const startListening = () => {
     if (isCancelled) return;
+    if (!auth.currentUser || auth.currentUser.uid !== userId) return;
     const colRef = collection(db, 'users', userId, 'subjects');
     unsubscribeSnapshot = onSnapshot(
       colRef,
@@ -352,7 +481,7 @@ export function subscribeToSubjects(
     );
   };
 
-  if (isRegistered && auth.currentUser?.uid !== userId) {
+  if (auth.currentUser?.uid !== userId) {
     const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
       if (fbUser && fbUser.uid === userId) {
         unsubAuth();
@@ -376,20 +505,33 @@ export function subscribeToSubjects(
 }
 
 export async function saveSubject(userId: string, subject: Partial<Subject>): Promise<string> {
-  const subjectId = subject.id || doc(collection(db, 'users', userId, 'subjects')).id;
+  const subjectId = subject.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'sub_' + Math.random().toString(36).substring(2, 10));
+  const data: Subject = {
+    id: subjectId,
+    name: subject.name || 'Untitled Subject',
+    code: subject.code || 'SUB101',
+    teacher: subject.teacher || 'Professor',
+    totalClasses: Number(subject.totalClasses) || 0,
+    attendedClasses: Number(subject.attendedClasses) || 0,
+    color: subject.color || SUBJECT_COLOR_PALETTE[Math.floor(Math.random() * SUBJECT_COLOR_PALETTE.length)],
+    createdAt: subject.createdAt || new Date().toISOString(),
+  };
+
+  if (isGuestUser(userId)) {
+    const current = getGuestSubjects();
+    const idx = current.findIndex((s) => s.id === subjectId);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...data };
+    } else {
+      current.push(data);
+    }
+    setGuestSubjects(current);
+    return subjectId;
+  }
+
   const path = `users/${userId}/subjects/${subjectId}`;
   try {
     const subjectRef = doc(db, 'users', userId, 'subjects', subjectId);
-    const data: Subject = {
-      id: subjectId,
-      name: subject.name || 'Untitled Subject',
-      code: subject.code || 'SUB101',
-      teacher: subject.teacher || 'Professor',
-      totalClasses: Number(subject.totalClasses) || 0,
-      attendedClasses: Number(subject.attendedClasses) || 0,
-      color: subject.color || SUBJECT_COLOR_PALETTE[Math.floor(Math.random() * SUBJECT_COLOR_PALETTE.length)],
-      createdAt: subject.createdAt || new Date().toISOString(),
-    };
     await setDoc(subjectRef, data, { merge: true });
     return subjectId;
   } catch (error) {
@@ -398,6 +540,12 @@ export async function saveSubject(userId: string, subject: Partial<Subject>): Pr
 }
 
 export async function deleteSubject(userId: string, subjectId: string): Promise<void> {
+  if (isGuestUser(userId)) {
+    const current = getGuestSubjects().filter((s) => s.id !== subjectId);
+    setGuestSubjects(current);
+    return;
+  }
+
   const path = `users/${userId}/subjects/${subjectId}`;
   try {
     await deleteDoc(doc(db, 'users', userId, 'subjects', subjectId));
@@ -417,6 +565,36 @@ export async function updateSubjectCounters(
   subjectName?: string
 ): Promise<void> {
   if (!subjectId && !subjectName) return;
+
+  if (isGuestUser(userId)) {
+    const current = getGuestSubjects();
+    const normTargetName = (subjectName || '').trim().toLowerCase();
+    const updated = current.map((s) => {
+      const matchById = subjectId && s.id === subjectId;
+      const matchByName = normTargetName && (s.name || '').trim().toLowerCase() === normTargetName;
+      if (!matchById && !matchByName) return s;
+
+      let totalClasses = Number(s.totalClasses) || 0;
+      let attendedClasses = Number(s.attendedClasses) || 0;
+
+      if (previousStatus === 'present' || previousStatus === 'late') {
+        attendedClasses = Math.max(0, attendedClasses - 1);
+      }
+      if (previousStatus !== null && previousStatus !== 'cancelled') {
+        totalClasses = Math.max(0, totalClasses - 1);
+      }
+      if (newStatus === 'present' || newStatus === 'late') {
+        attendedClasses += 1;
+      }
+      if (newStatus !== null && newStatus !== 'cancelled') {
+        totalClasses += 1;
+      }
+      return { ...s, totalClasses, attendedClasses };
+    });
+    setGuestSubjects(updated);
+    return;
+  }
+
   try {
     let subjectRef: any = null;
     let subjectSnap: any = null;
@@ -431,7 +609,6 @@ export async function updateSubjectCounters(
     }
 
     if (!subjectSnap || !subjectSnap.exists()) {
-      // Find matching subject across user's subjects collection
       const subjectsSnap = await getDocs(collection(db, 'users', userId, 'subjects'));
       const normTargetName = (subjectName || '').trim().toLowerCase();
       const slugFromId = (subjectId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -492,6 +669,9 @@ export async function updateSubjectCounters(
    ========================================================================= */
 
 export async function fetchTimetables(userId: string): Promise<Timetable[]> {
+  if (isGuestUser(userId)) {
+    return getGuestTimetables();
+  }
   const path = `users/${userId}/timetables`;
   try {
     const snap = await getDocs(collection(db, 'users', userId, 'timetables'));
@@ -505,14 +685,26 @@ export function subscribeToTimetables(
   userId: string,
   onUpdate: (timetables: Timetable[]) => void
 ): () => void {
-  const path = `users/${userId}/timetables`;
-  const isRegistered = Boolean(userId && !userId.startsWith('guest_') && userId !== 'student_nishant');
+  if (isGuestUser(userId)) {
+    onUpdate(getGuestTimetables());
+    const handleUpdate = () => {
+      onUpdate(getGuestTimetables());
+    };
+    window.addEventListener('attendzy_guest_data_changed', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('attendzy_guest_data_changed', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }
 
+  const path = `users/${userId}/timetables`;
   let unsubscribeSnapshot: (() => void) | null = null;
   let isCancelled = false;
 
   const startListening = () => {
     if (isCancelled) return;
+    if (!auth.currentUser || auth.currentUser.uid !== userId) return;
     const colRef = collection(db, 'users', userId, 'timetables');
     unsubscribeSnapshot = onSnapshot(
       colRef,
@@ -526,7 +718,7 @@ export function subscribeToTimetables(
     );
   };
 
-  if (isRegistered && auth.currentUser?.uid !== userId) {
+  if (auth.currentUser?.uid !== userId) {
     const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
       if (fbUser && fbUser.uid === userId) {
         unsubAuth();
@@ -550,26 +742,39 @@ export function subscribeToTimetables(
 }
 
 export async function saveTimetable(userId: string, timetable: Partial<Timetable>): Promise<string> {
-  const timetableId = timetable.id || doc(collection(db, 'users', userId, 'timetables')).id;
+  const timetableId = timetable.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'tt_' + Math.random().toString(36).substring(2, 10));
+  const data: Timetable = {
+    id: timetableId,
+    name: timetable.name || 'Class Timetable',
+    imageUrl: timetable.imageUrl || '',
+    uploadedAt: timetable.uploadedAt || new Date().toISOString(),
+    weekStart: timetable.weekStart || getCurrentWeekRange().weekStart,
+    weekEnd: timetable.weekEnd || getCurrentWeekRange().weekEnd,
+    days: timetable.days || {
+      monday: [],
+      tuesday: [],
+      wednesday: [],
+      thursday: [],
+      friday: [],
+      saturday: [],
+    },
+  };
+
+  if (isGuestUser(userId)) {
+    const current = getGuestTimetables();
+    const idx = current.findIndex((t) => t.id === timetableId);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...data };
+    } else {
+      current.push(data);
+    }
+    setGuestTimetables(current);
+    return timetableId;
+  }
+
   const path = `users/${userId}/timetables/${timetableId}`;
   try {
     const timetableRef = doc(db, 'users', userId, 'timetables', timetableId);
-    const data: Timetable = {
-      id: timetableId,
-      name: timetable.name || 'Class Timetable',
-      imageUrl: timetable.imageUrl || '',
-      uploadedAt: timetable.uploadedAt || new Date().toISOString(),
-      weekStart: timetable.weekStart || getCurrentWeekRange().weekStart,
-      weekEnd: timetable.weekEnd || getCurrentWeekRange().weekEnd,
-      days: timetable.days || {
-        monday: [],
-        tuesday: [],
-        wednesday: [],
-        thursday: [],
-        friday: [],
-        saturday: [],
-      },
-    };
     await setDoc(timetableRef, data, { merge: true });
     return timetableId;
   } catch (error) {
@@ -578,6 +783,12 @@ export async function saveTimetable(userId: string, timetable: Partial<Timetable
 }
 
 export async function deleteTimetable(userId: string, timetableId: string): Promise<void> {
+  if (isGuestUser(userId)) {
+    const current = getGuestTimetables().filter((t) => t.id !== timetableId);
+    setGuestTimetables(current);
+    return;
+  }
+
   const path = `users/${userId}/timetables/${timetableId}`;
   try {
     await deleteDoc(doc(db, 'users', userId, 'timetables', timetableId));
@@ -591,6 +802,9 @@ export async function deleteTimetable(userId: string, timetableId: string): Prom
    ========================================================================= */
 
 export async function fetchAttendanceDocs(userId: string): Promise<AttendanceDayDoc[]> {
+  if (isGuestUser(userId)) {
+    return getGuestAttendanceDocs();
+  }
   const path = `users/${userId}/attendance`;
   try {
     const snap = await getDocs(collection(db, 'users', userId, 'attendance'));
@@ -604,14 +818,26 @@ export function subscribeToAttendanceDocs(
   userId: string,
   onUpdate: (docs: AttendanceDayDoc[]) => void
 ): () => void {
-  const path = `users/${userId}/attendance`;
-  const isRegistered = Boolean(userId && !userId.startsWith('guest_') && userId !== 'student_nishant');
+  if (isGuestUser(userId)) {
+    onUpdate(getGuestAttendanceDocs());
+    const handleUpdate = () => {
+      onUpdate(getGuestAttendanceDocs());
+    };
+    window.addEventListener('attendzy_guest_data_changed', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('attendzy_guest_data_changed', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }
 
+  const path = `users/${userId}/attendance`;
   let unsubscribeSnapshot: (() => void) | null = null;
   let isCancelled = false;
 
   const startListening = () => {
     if (isCancelled) return;
+    if (!auth.currentUser || auth.currentUser.uid !== userId) return;
     const colRef = collection(db, 'users', userId, 'attendance');
     unsubscribeSnapshot = onSnapshot(
       colRef,
@@ -625,7 +851,7 @@ export function subscribeToAttendanceDocs(
     );
   };
 
-  if (isRegistered && auth.currentUser?.uid !== userId) {
+  if (auth.currentUser?.uid !== userId) {
     const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
       if (fbUser && fbUser.uid === userId) {
         unsubAuth();
@@ -649,6 +875,18 @@ export function subscribeToAttendanceDocs(
 }
 
 export async function saveAttendanceDoc(userId: string, attDoc: AttendanceDayDoc): Promise<void> {
+  if (isGuestUser(userId)) {
+    const current = getGuestAttendanceDocs();
+    const idx = current.findIndex((d) => d.date === attDoc.date);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...attDoc };
+    } else {
+      current.push(attDoc);
+    }
+    setGuestAttendanceDocs(current);
+    return;
+  }
+
   const path = `users/${userId}/attendance/${attDoc.date}`;
   try {
     const docRef = doc(db, 'users', userId, 'attendance', attDoc.date);
@@ -660,6 +898,16 @@ export async function saveAttendanceDoc(userId: string, attDoc: AttendanceDayDoc
 
 export async function batchSaveAttendanceDocs(userId: string, docs: AttendanceDayDoc[]): Promise<void> {
   if (!docs || docs.length === 0) return;
+
+  if (isGuestUser(userId)) {
+    const current = getGuestAttendanceDocs();
+    const map = new Map<string, AttendanceDayDoc>();
+    for (const d of current) map.set(d.date, d);
+    for (const d of docs) map.set(d.date, { ...(map.get(d.date) || {}), ...d });
+    setGuestAttendanceDocs(Array.from(map.values()));
+    return;
+  }
+
   try {
     const batch = writeBatch(db);
     for (const d of docs) {
@@ -682,6 +930,49 @@ export async function markAttendance(
   newStatus: AttendanceStatus,
   note?: string
 ): Promise<void> {
+  if (isGuestUser(userId)) {
+    const currentDocs = getGuestAttendanceDocs();
+    const docItem = currentDocs.find((d) => d.date === date);
+    if (!docItem || !docItem.classes || !docItem.classes[classIndex]) return;
+
+    const previousStatus = docItem.classes[classIndex].status;
+    docItem.classes[classIndex].status = newStatus;
+    docItem.classes[classIndex].markedAt = new Date().toISOString();
+    if (note !== undefined) {
+      docItem.classes[classIndex].note = note;
+    }
+    docItem.updatedAt = new Date().toISOString();
+    setGuestAttendanceDocs(currentDocs);
+
+    // Update guest subject counters
+    const targetClass = docItem.classes[classIndex];
+    const guestSubjects = getGuestSubjects();
+    const updatedSubjects = guestSubjects.map((s) => {
+      const matchById = targetClass.subjectId && s.id === targetClass.subjectId;
+      const matchByName = (s.name || '').trim().toLowerCase() === (targetClass.subjectName || '').trim().toLowerCase();
+      if (!matchById && !matchByName) return s;
+
+      let totalClasses = Number(s.totalClasses) || 0;
+      let attendedClasses = Number(s.attendedClasses) || 0;
+
+      if (previousStatus === 'present' || previousStatus === 'late') {
+        attendedClasses = Math.max(0, attendedClasses - 1);
+      }
+      if (previousStatus !== null && previousStatus !== 'cancelled') {
+        totalClasses = Math.max(0, totalClasses - 1);
+      }
+      if (newStatus === 'present' || newStatus === 'late') {
+        attendedClasses += 1;
+      }
+      if (newStatus !== null && newStatus !== 'cancelled') {
+        totalClasses += 1;
+      }
+      return { ...s, totalClasses, attendedClasses };
+    });
+    setGuestSubjects(updatedSubjects);
+    return;
+  }
+
   const path = `users/${userId}/attendance/${date}`;
   try {
     const docRef = doc(db, 'users', userId, 'attendance', date);
@@ -718,6 +1009,16 @@ export async function markAttendance(
    ========================================================================= */
 
 export async function clearAllUserData(userId: string): Promise<void> {
+  if (isGuestUser(userId)) {
+    try {
+      localStorage.removeItem(GUEST_SUBJECTS_KEY);
+      localStorage.removeItem(GUEST_TIMETABLES_KEY);
+      localStorage.removeItem(GUEST_ATTENDANCE_KEY);
+      window.dispatchEvent(new CustomEvent('attendzy_guest_data_changed'));
+    } catch {}
+    return;
+  }
+
   const path = `users/${userId}`;
   try {
     const subjectsSnap = await getDocs(collection(db, 'users', userId, 'subjects'));
