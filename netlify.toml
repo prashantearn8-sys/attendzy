@@ -1,0 +1,35 @@
+# Netlify Configuration for Attendzy
+# Production Build & Security Headers
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Global Security Headers for all routes
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Content Security Policy (CSP)
+    # Allows self, Google APIs, Google Fonts, and Firebase Auth/Firestore endpoints
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; img-src 'self' data: https:;"
+    
+    # Clickjacking protection
+    X-Frame-Options = "DENY"
+    
+    # MIME-type sniffing prevention
+    X-Content-Type-Options = "nosniff"
+    
+    # Referrer privacy
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    
+    # Feature & Hardware permissions restriction
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    
+    # HTTP Strict Transport Security (HSTS)
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+
+# Single-Page Application (SPA) redirect fallback for React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

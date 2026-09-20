@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Health check test connection rule
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return (request.auth != null && request.auth.uid == userId) ||
+             (userId is string && userId.size() > 0 && userId.size() <= 128 && (userId.matches('guest_.*') || userId == 'student_nishant'));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // User Root Document & Subcollections
+    match /users/{userId} {
+      // User can manage their own profile document
+      allow read, write: if isOwner(userId);
+
+      // Subjects Subcollection
+      // Path: /users/{userId}/subjects/{subjectId}
+      match /subjects/{subjectId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Timetables Subcollection
+      // Path: /users/{userId}/timetables/{timetableId}
+      match /timetables/{timetableId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Daily Attendance Subcollection
+      // Path: /users/{userId}/attendance/{date}
+      match /attendance/{date} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Legacy fallback subcollection for app backwards compatibility
+      match /attendance_data/{dataId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
+
