@@ -18,6 +18,9 @@ import {
   ShieldCheck,
   AlertCircle,
   ArrowRight,
+  FileText,
+  ExternalLink,
+  Copy,
 } from 'lucide-react';
 import {
   WEEK_DAYS_LIST,
@@ -104,6 +107,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isSatSun =
     weekendDays.length === 2 && weekendDays.includes(0) && weekendDays.includes(6);
   const isSunOnly = weekendDays.length === 1 && weekendDays.includes(0);
+
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLink(label);
+    setTimeout(() => setCopiedLink(null), 2000);
+  };
 
   const handleClear = async () => {
     if (!onClearAllData) return;
@@ -423,6 +434,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 ? `${overallStats.totalAttended} attended and ${overallStats.totalAbsent} missed out of ${overallStats.totalClasses} classes conducted. Note: Bunk margins and class deficits are evaluated per individual subject in the Subjects tab.`
                 : `Set your goal to ${targetPercentage}%. Individual bunk margins and attendance requirements are computed separately for each subject.`}
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Legal & Compliance Card */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-gray-900" />
+              <span>Legal & Policies</span>
+            </h2>
+            <p className="text-xs text-gray-500">
+              Required documentation and links for Google Cloud Console OAuth verification & publishing
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
+            Ready for Publishing
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          {/* Privacy Policy Link */}
+          <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>Privacy Policy</span>
+              </span>
+              <a
+                href="/privacy"
+                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 inline-flex items-center gap-1"
+              >
+                <span>View</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <p className="text-[11px] text-gray-500 font-mono truncate bg-white p-1.5 rounded border border-gray-200 select-all">
+              https://attendzy.netlify.app/privacy.html
+            </p>
+            <button
+              onClick={() => copyToClipboard('https://attendzy.netlify.app/privacy.html', 'privacy')}
+              className="w-full py-1 px-2 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-[11px] font-medium text-gray-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+            >
+              <Copy className="w-3 h-3" />
+              <span>{copiedLink === 'privacy' ? 'Copied URL!' : 'Copy Privacy Policy URL'}</span>
+            </button>
+          </div>
+
+          {/* Terms of Service Link */}
+          <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span>Terms of Service</span>
+              </span>
+              <a
+                href="/terms"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+              >
+                <span>View</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <p className="text-[11px] text-gray-500 font-mono truncate bg-white p-1.5 rounded border border-gray-200 select-all">
+              https://attendzy.netlify.app/terms.html
+            </p>
+            <button
+              onClick={() => copyToClipboard('https://attendzy.netlify.app/terms.html', 'terms')}
+              className="w-full py-1 px-2 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-[11px] font-medium text-gray-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+            >
+              <Copy className="w-3 h-3" />
+              <span>{copiedLink === 'terms' ? 'Copied URL!' : 'Copy Terms of Service URL'}</span>
+            </button>
           </div>
         </div>
       </div>

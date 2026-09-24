@@ -150,6 +150,15 @@ export async function signInWithGoogleFirebase(preferRedirect = false): Promise<
     if (errorCode === 'auth/popup-closed-by-user') {
       throw new Error('Google Sign-In was cancelled.');
     }
+    if (
+      error?.message?.includes('access_denied') ||
+      error?.message?.includes('developer-approved testers') ||
+      errorCode === 'auth/unauthorized-domain'
+    ) {
+      throw new Error(
+        'Google OAuth Error 403: Project is in "Testing" mode. In Google Cloud Console, click "Publish App" or add your email to "Test Users".'
+      );
+    }
     console.error('[Firebase Auth] Sign In Error:', error);
     throw new Error(error?.message || 'Failed to sign in with Google.');
   }

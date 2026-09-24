@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../types/attendance';
 
-export type NavTab = 'dashboard' | 'calendar' | 'timetable' | 'subjects' | 'settings';
+export type NavTab = 'dashboard' | 'calendar' | 'timetable' | 'subjects' | 'settings' | 'privacy' | 'terms';
 
 export const TAB_ROUTES: Record<NavTab, string> = {
   dashboard: '/home',
@@ -19,6 +19,8 @@ export const TAB_ROUTES: Record<NavTab, string> = {
   timetable: '/schedule',
   subjects: '/subjects',
   settings: '/settings',
+  privacy: '/privacy',
+  terms: '/terms',
 };
 
 export function getTabFromPath(path: string): NavTab {
@@ -34,6 +36,12 @@ export function getTabFromPath(path: string): NavTab {
   }
   if (normalized === '/settings' || normalized === '/profile') {
     return 'settings';
+  }
+  if (normalized === '/privacy' || normalized === '/privacy-policy') {
+    return 'privacy';
+  }
+  if (normalized === '/terms' || normalized === '/terms-of-service') {
+    return 'terms';
   }
   return 'dashboard';
 }

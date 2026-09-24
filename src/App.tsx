@@ -6,6 +6,8 @@ import { CalendarView } from './components/CalendarView';
 import { TimetableManagerView } from './components/TimetableManagerView';
 import { SubjectsView } from './components/SubjectsView';
 import { SettingsView } from './components/SettingsView';
+import { PrivacyPolicyView } from './components/PrivacyPolicyView';
+import { TermsOfServiceView } from './components/TermsOfServiceView';
 import {
   UserProfile,
   Subject,
@@ -95,6 +97,8 @@ export default function App() {
       timetable: 'Attendzy - Schedule',
       subjects: 'Attendzy - Subjects',
       settings: 'Attendzy - Settings',
+      privacy: 'Attendzy - Privacy Policy',
+      terms: 'Attendzy - Terms of Service',
     };
     document.title = titles[activeTab] || 'Attendzy - Student Attendance Tracker';
   }, [activeTab]);
@@ -974,9 +978,46 @@ export default function App() {
                 onUpdateUser={handleUpdateProfile}
               />
             )}
+
+            {activeTab === 'privacy' && (
+              <PrivacyPolicyView onBack={() => setActiveTab('dashboard')} />
+            )}
+
+            {activeTab === 'terms' && (
+              <TermsOfServiceView onBack={() => setActiveTab('dashboard')} />
+            )}
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Discreet Footer with Legal Links */}
+      <footer className="border-t border-gray-200/80 bg-white/60 py-4 px-4 text-center text-xs text-gray-500 mt-auto">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <p>© {new Date().getFullYear()} Attendzy • Student Attendance Tracker</p>
+          <div className="flex items-center gap-4 text-xs font-medium">
+            <button
+              onClick={() => setActiveTab('privacy')}
+              className="text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+            <span className="text-gray-300">•</span>
+            <button
+              onClick={() => setActiveTab('terms')}
+              className="text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+            >
+              Terms of Service
+            </button>
+            <span className="text-gray-300">•</span>
+            <a
+              href="mailto:burnster1826@gmail.com"
+              className="text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              Support
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
