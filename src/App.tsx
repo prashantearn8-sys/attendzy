@@ -8,6 +8,7 @@ import { SubjectsView } from './components/SubjectsView';
 import { SettingsView } from './components/SettingsView';
 import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import { TermsOfServiceView } from './components/TermsOfServiceView';
+import { AuthDiagnosticModal } from './components/AuthDiagnosticModal';
 import {
   UserProfile,
   Subject,
@@ -20,6 +21,7 @@ import {
 import {
   auth,
   signInWithGoogleFirebase,
+  signInWithGoogleRedirect,
   signOutFirebase,
   subscribeToAuthChanges,
   checkRedirectAuthResult,
@@ -847,16 +849,27 @@ export default function App() {
     }
   };
 
-  // Google Sign-In & Sign-Out
-  const handleGoogleSignIn = async () => {
+  // Google Sign-In & Sign-Out State
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const handleGoogleSignIn = async (useRedirect = false) => {
+    setAuthError(null);
+    setAuthLoading(true);
     try {
-      const profile = await signInWithGoogleFirebase();
+      if (useRedirect) {
+        await signInWithGoogleRedirect();
+        return;
+      }
+      const profile = await signInWithGoogleFirebase(false);
       if (profile) {
         setUser(profile);
-        addToast(`Signed in as ${profile.name}`, 'success');
       }
     } catch (err: any) {
-      addToast(err?.message || 'Google sign in cancelled', 'error');
+      console.error('Google Sign-In failed:', err);
+      setAuthError(err?.message || 'Failed to sign in with Google');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -886,7 +899,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         user={user}
         isSignedIn={isSignedIn}
-        onSignIn={handleGoogleSignIn}
+        isSigningIn={authLoading}
+        onSignIn={() => handleGoogleSignIn(false)}
         onSignOut={handleSignOut}
       />
 
@@ -972,7 +986,9 @@ export default function App() {
                 targetPercentage={targetPercentage}
                 onUpdateWeekendDays={handleUpdateWeekendDays}
                 onUpdateTargetPercentage={handleUpdateTargetPercentage}
-                onSignIn={handleGoogleSignIn}
+                onSignIn={() => handleGoogleSignIn(false)}
+                onSignInRedirect={() => handleGoogleSignIn(true)}
+                isSigningIn={authLoading}
                 onSignOut={handleSignOut}
                 onClearAllData={handleClearAllData}
                 onUpdateUser={handleUpdateProfile}
@@ -1018,6 +1034,16 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Auth Error & Diagnostic Troubleshooting Modal */}
+      {authError && (
+        <AuthDiagnosticModal
+          errorMessage={authError}
+          onClose={() => setAuthError(null)}
+          onRetryPopup={() => handleGoogleSignIn(false)}
+          onRetryRedirect={() => handleGoogleSignIn(true)}
+        />
+      )}
     </div>
   );
 }

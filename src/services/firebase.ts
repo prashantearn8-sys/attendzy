@@ -123,12 +123,11 @@ export async function testFirestoreConnection(): Promise<boolean> {
 }
 
 /**
- * Sign in using Firebase Google Auth
+ * Sign in using Firebase Google Auth with Popup
  */
 export async function signInWithGoogleFirebase(preferRedirect = false): Promise<UserProfile | null> {
   if (preferRedirect) {
-    await signInWithRedirect(auth, googleProvider);
-    return null;
+    return signInWithGoogleRedirect();
   }
 
   try {
@@ -139,28 +138,70 @@ export async function signInWithGoogleFirebase(preferRedirect = false): Promise<
     return null;
   } catch (error: any) {
     const errorCode = error?.code || '';
+    const errorMsg = error?.message || '';
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'attendzy.netlify.app';
+
+    console.error('[Firebase Auth] Sign In Error:', { errorCode, errorMsg, currentHost, error });
+
+    // 1. Domain not authorized in Firebase Console
+    if (errorCode === 'auth/unauthorized-domain') {
+      throw new Error(
+        `[Unauthorized Domain (${errorCode})]: Domain "${currentHost}" is not listed in your Firebase project. Go to Firebase Console > Authentication > Settings > Authorized Domains, click "Add Domain" and add "${currentHost}".`
+      );
+    }
+
+    // 2. Google provider not enabled in Firebase
+    if (errorCode === 'auth/operation-not-allowed') {
+      throw new Error(
+        `[Provider Disabled (${errorCode})]: Google Sign-In is disabled for project "${firebaseConfig.projectId}". In Firebase Console > Authentication > Sign-in method, click "Google" and toggle it to Enabled.`
+      );
+    }
+
+    // 3. Popup blocked by browser
     if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/cancelled-popup-request') {
       try {
         await signInWithRedirect(auth, googleProvider);
         return null;
-      } catch (redirectErr) {
-        throw new Error('Sign-in popup was blocked. Please allow popups or open in a new tab.');
+      } catch (redirectErr: any) {
+        throw new Error(
+          'Sign-in popup was blocked by your browser. Please allow popups or use the "Sign In with Redirect" option.'
+        );
       }
     }
+
+    // 4. User closed popup
     if (errorCode === 'auth/popup-closed-by-user') {
-      throw new Error('Google Sign-In was cancelled.');
+      throw new Error('Google Sign-In was closed before completing.');
     }
-    if (
-      error?.message?.includes('access_denied') ||
-      error?.message?.includes('developer-approved testers') ||
-      errorCode === 'auth/unauthorized-domain'
-    ) {
+
+    // 5. Google access_denied / 403
+    if (errorMsg.includes('access_denied') || errorMsg.includes('developer-approved testers')) {
       throw new Error(
-        'Google OAuth Error 403: Project is in "Testing" mode. In Google Cloud Console, click "Publish App" or add your email to "Test Users".'
+        `[Google 403 access_denied]: If your app is "In production", Google is blocking access because sensitive or restricted scopes (such as Google Sheets or Calendar) are still listed in Google Cloud Console > OAuth Consent Screen > Scopes. Remove sensitive scopes so Google does not require verification, or add your email to "Test Users".`
       );
     }
-    console.error('[Firebase Auth] Sign In Error:', error);
-    throw new Error(error?.message || 'Failed to sign in with Google.');
+
+    throw new Error(`[${errorCode || 'auth/error'}]: ${errorMsg || 'Failed to sign in with Google.'}`);
+  }
+}
+
+/**
+ * Sign in using Firebase Google Auth with Full-Page Redirect
+ * Bypasses third-party cookie restrictions, popup blockers, and mobile webview issues
+ */
+export async function signInWithGoogleRedirect(): Promise<null> {
+  try {
+    await signInWithRedirect(auth, googleProvider);
+    return null;
+  } catch (error: any) {
+    const errorCode = error?.code || '';
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'attendzy.netlify.app';
+    if (errorCode === 'auth/unauthorized-domain') {
+      throw new Error(
+        `[Unauthorized Domain]: Please add "${currentHost}" to Firebase Console > Authentication > Settings > Authorized domains.`
+      );
+    }
+    throw new Error(error?.message || 'Failed to initiate redirect sign-in.');
   }
 }
 

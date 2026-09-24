@@ -51,6 +51,7 @@ interface NavbarProps {
   setActiveTab: (tab: NavTab) => void;
   user?: UserProfile | null;
   isSignedIn?: boolean;
+  isSigningIn?: boolean;
   onSignIn?: () => void;
   onSignOut?: () => void;
 }
@@ -60,6 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   user,
   isSignedIn = false,
+  isSigningIn = false,
   onSignIn,
 }) => {
   // Desktop navigation items (4 primary views, with profile/settings on top right)
@@ -156,13 +158,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <motion.button
                 id="header-signin-btn"
                 type="button"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.96 }}
+                disabled={isSigningIn}
+                whileHover={{ scale: isSigningIn ? 1 : 1.03 }}
+                whileTap={{ scale: isSigningIn ? 1 : 0.96 }}
                 onClick={onSignIn}
-                className="h-9 min-h-[38px] px-3 sm:px-3.5 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                className="h-9 min-h-[38px] px-3 sm:px-3.5 rounded-xl bg-gray-900 hover:bg-black disabled:opacity-75 text-white text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 transition-all"
               >
-                <User className="w-3.5 h-3.5" />
-                <span>Sign In</span>
+                {isSigningIn ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <User className="w-3.5 h-3.5" />
+                )}
+                <span>{isSigningIn ? 'Signing In...' : 'Sign In'}</span>
               </motion.button>
             )}
 

@@ -39,6 +39,8 @@ interface SettingsViewProps {
   onUpdateWeekendDays: (days: number[]) => void;
   onUpdateTargetPercentage?: (percentage: number) => void;
   onSignIn: () => void;
+  onSignInRedirect?: () => void;
+  isSigningIn?: boolean;
   onSignOut: () => void;
   onClearAllData?: () => Promise<void>;
   onUpdateUser?: (updated: UserProfile) => void;
@@ -54,6 +56,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateWeekendDays,
   onUpdateTargetPercentage,
   onSignIn,
+  onSignInRedirect,
+  isSigningIn = false,
   onSignOut,
   onClearAllData,
 }) => {
@@ -185,14 +189,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span>Sign Out</span>
               </button>
             ) : (
-              <button
-                id="settings-signin-btn"
-                onClick={onSignIn}
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-gray-900 hover:bg-black text-xs sm:text-sm font-semibold text-white transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                <User className="w-4 h-4" />
-                <span>Sign In with Google</span>
-              </button>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <button
+                  id="settings-signin-btn"
+                  onClick={onSignIn}
+                  disabled={isSigningIn}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-gray-900 hover:bg-black disabled:opacity-70 text-xs sm:text-sm font-semibold text-white transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                >
+                  {isSigningIn ? (
+                    <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <User className="w-4 h-4" />
+                  )}
+                  <span>{isSigningIn ? 'Connecting...' : 'Sign In with Google'}</span>
+                </button>
+
+                {onSignInRedirect && (
+                  <button
+                    id="settings-signin-redirect-btn"
+                    onClick={onSignInRedirect}
+                    disabled={isSigningIn}
+                    title="Recommended if popups are blocked or on mobile"
+                    className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 hover:text-gray-900 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <span>Use Redirect</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
