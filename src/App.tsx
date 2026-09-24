@@ -30,15 +30,10 @@ import {
   saveAttendanceDoc,
   batchSaveAttendanceDocs,
   markAttendance,
+  markAllAttendanceForDate,
   clearAllUserData,
   updateUserProfile,
-  getOrRequestGoogleAccessToken,
-  getCachedGoogleAccessToken,
 } from './services/firebase';
-import {
-  createAttendanceSpreadsheet,
-  syncAttendanceToGoogleSheet,
-} from './services/googleSheets';
 import {
   calculateOverallAttendance,
   getAttendanceTrend,
@@ -418,6 +413,81 @@ export default function App() {
     } catch (error: any) {
       console.error('Mark attendance failed:', error);
       addToast('Failed to save attendance mark.', 'error');
+    }
+  };
+
+  // Feature: Mark all classes for a given date (Present All / Absent All)
+  const handleMarkAllAttendance = async (date: string, status: AttendanceStatus) => {
+    const dayDoc = attendanceDocs.find((d) => d.date === date);
+    if (!dayDoc || !dayDoc.classes || dayDoc.classes.length === 0) {
+      addToast('No classes scheduled for this date.', 'info');
+      return;
+    }
+
+    const previousClasses = [...dayDoc.classes];
+    const nowIso = new Date().toISOString();
+
+    // 1. Optimistic attendance docs update
+    setAttendanceDocs((prev) => {
+      return prev.map((doc) => {
+        if (doc.date !== date) return doc;
+        const updatedClasses = doc.classes.map((cls) => {
+          if (cls.status === 'cancelled') return cls;
+          return {
+            ...cls,
+            status,
+            markedAt: nowIso,
+          };
+        });
+        return { ...doc, classes: updatedClasses };
+      });
+    });
+
+    // 2. Optimistic subjects totals update
+    setSubjects((prevSubjects) => {
+      return prevSubjects.map((s) => {
+        let totalClasses = Number(s.totalClasses) || 0;
+        let attendedClasses = Number(s.attendedClasses) || 0;
+
+        previousClasses.forEach((cls) => {
+          if (cls.status === 'cancelled') return;
+          if (!matchesSubject(cls, s)) return;
+          const prevStatus = cls.status;
+
+          // Undo previous
+          if (prevStatus === 'present' || prevStatus === 'late') {
+            attendedClasses = Math.max(0, attendedClasses - 1);
+          }
+          if (prevStatus !== null && prevStatus !== 'cancelled') {
+            totalClasses = Math.max(0, totalClasses - 1);
+          }
+
+          // Apply new
+          if (status === 'present' || status === 'late') {
+            attendedClasses += 1;
+          }
+          if (status !== null && status !== 'cancelled') {
+            totalClasses += 1;
+          }
+        });
+
+        return { ...s, totalClasses, attendedClasses };
+      });
+    });
+
+    try {
+      await markAllAttendanceForDate(effectiveUserId, date, status);
+      addToast(
+        status === 'present'
+          ? 'All classes marked as Present ✓'
+          : status === 'absent'
+          ? 'All classes marked as Absent'
+          : 'Attendance reset for all classes',
+        status === 'present' ? 'success' : 'info'
+      );
+    } catch (error: any) {
+      console.error('Failed to mark all attendance:', error);
+      addToast('Failed to update all classes.', 'error');
     }
   };
 
@@ -804,139 +874,6 @@ export default function App() {
     addToast('Profile updated', 'success');
   };
 
-  // Google Sheets Live Sync Integration State & Handlers
-  const [isGoogleSheetCreating, setIsGoogleSheetCreating] = useState(false);
-  const [isGoogleSheetSyncing, setIsGoogleSheetSyncing] = useState(false);
-
-  const handleBuildGoogleSheet = async () => {
-    if (!isSignedIn) {
-      handleGoogleSignIn();
-      return;
-    }
-    setIsGoogleSheetCreating(true);
-    try {
-      const token = await getOrRequestGoogleAccessToken();
-      const res = await createAttendanceSpreadsheet(token, user?.name);
-
-      // Perform initial population of subject stats & logs
-      await syncAttendanceToGoogleSheet(
-        token,
-        res.spreadsheetId,
-        subjects,
-        attendanceDocs,
-        targetPercentage,
-        user?.name
-      );
-
-      const now = new Date().toISOString();
-      const updates: Partial<UserProfile> = {
-        googleSpreadsheetId: res.spreadsheetId,
-        googleSpreadsheetUrl: res.spreadsheetUrl,
-        googleSpreadsheetName: res.title,
-        lastGoogleSheetSyncTime: now,
-        autoSyncGoogleSheets: true,
-      };
-
-      if (effectiveUserId) {
-        await updateUserProfile(effectiveUserId, updates);
-      }
-      if (user) {
-        setUser({ ...user, ...updates });
-      }
-      addToast('Google Spreadsheet created in your Drive and live linked!', 'success');
-    } catch (err: any) {
-      console.error('Failed to build Google Spreadsheet:', err);
-      addToast(err?.message || 'Failed to build Google Spreadsheet', 'error');
-    } finally {
-      setIsGoogleSheetCreating(false);
-    }
-  };
-
-  const handleSyncGoogleSheet = async () => {
-    if (!user?.googleSpreadsheetId) return;
-    setIsGoogleSheetSyncing(true);
-    try {
-      const token = await getOrRequestGoogleAccessToken();
-      await syncAttendanceToGoogleSheet(
-        token,
-        user.googleSpreadsheetId,
-        subjects,
-        attendanceDocs,
-        targetPercentage,
-        user?.name
-      );
-      const now = new Date().toISOString();
-      if (effectiveUserId) {
-        await updateUserProfile(effectiveUserId, { lastGoogleSheetSyncTime: now });
-      }
-      if (user) {
-        setUser({ ...user, lastGoogleSheetSyncTime: now });
-      }
-      addToast('Google Sheet updated with latest live attendance stats!', 'success');
-    } catch (err: any) {
-      console.error('Failed to sync to Google Spreadsheet:', err);
-      addToast(err?.message || 'Failed to sync to Google Spreadsheet', 'error');
-    } finally {
-      setIsGoogleSheetSyncing(false);
-    }
-  };
-
-  const handleUnlinkGoogleSheet = async () => {
-    const updates: Partial<UserProfile> = {
-      googleSpreadsheetId: '',
-      googleSpreadsheetUrl: '',
-      googleSpreadsheetName: '',
-      lastGoogleSheetSyncTime: '',
-      autoSyncGoogleSheets: false,
-    };
-    if (effectiveUserId) {
-      await updateUserProfile(effectiveUserId, updates);
-    }
-    if (user) {
-      setUser({ ...user, ...updates });
-    }
-    addToast('Google Spreadsheet unlinked.', 'info');
-  };
-
-  const handleToggleAutoSyncGoogleSheet = async (enabled: boolean) => {
-    if (effectiveUserId) {
-      await updateUserProfile(effectiveUserId, { autoSyncGoogleSheets: enabled });
-    }
-    if (user) {
-      setUser({ ...user, autoSyncGoogleSheets: enabled });
-    }
-  };
-
-  // Background auto-sync to linked Google Spreadsheet when attendance changes
-  useEffect(() => {
-    if (!user?.googleSpreadsheetId || user.autoSyncGoogleSheets === false) return;
-    const token = getCachedGoogleAccessToken();
-    if (!token) return;
-
-    const timer = setTimeout(() => {
-      syncAttendanceToGoogleSheet(
-        token,
-        user.googleSpreadsheetId!,
-        subjects,
-        attendanceDocs,
-        targetPercentage,
-        user?.name
-      )
-        .then(() => {
-          const now = new Date().toISOString();
-          setUser((prev) => (prev ? { ...prev, lastGoogleSheetSyncTime: now } : null));
-          if (effectiveUserId) {
-            updateUserProfile(effectiveUserId, { lastGoogleSheetSyncTime: now }).catch(() => {});
-          }
-        })
-        .catch((err) => {
-          console.warn('Auto-sync to Google Sheet failed:', err);
-        });
-    }, 2500);
-
-    return () => clearTimeout(timer);
-  }, [attendanceDocs, subjects, targetPercentage, user?.googleSpreadsheetId, user?.autoSyncGoogleSheets]);
-
   return (
     <div className="min-h-screen bg-[#F4F5F7] text-gray-900 flex flex-col selection:bg-gray-200 selection:text-gray-900">
       {/* Top and Mobile Navigation Bar */}
@@ -971,6 +908,7 @@ export default function App() {
                 isSignedIn={isSignedIn}
                 onSignIn={handleGoogleSignIn}
                 onMarkAttendance={handleMarkAttendance}
+                onMarkAllAttendance={handleMarkAllAttendance}
                 onNavigateTab={(tab) => setActiveTab(tab)}
                 onSaveDailySchedule={handleSaveDailySchedule}
                 onClearDaySchedule={handleClearDaySchedule}
@@ -986,6 +924,7 @@ export default function App() {
                 isSignedIn={isSignedIn}
                 onSignIn={handleGoogleSignIn}
                 onMarkAttendance={handleMarkAttendance}
+                onMarkAllAttendance={handleMarkAllAttendance}
                 onNavigateTab={(tab) => setActiveTab(tab)}
                 onSaveDailySchedule={handleSaveDailySchedule}
                 onClearDaySchedule={handleClearDaySchedule}
@@ -1005,6 +944,7 @@ export default function App() {
                 onClearDaySchedule={handleClearDaySchedule}
                 onToggleDayOff={handleToggleDayOff}
                 onMarkAttendance={handleMarkAttendance}
+                onMarkAllAttendance={handleMarkAllAttendance}
               />
             )}
 
@@ -1032,12 +972,6 @@ export default function App() {
                 onSignOut={handleSignOut}
                 onClearAllData={handleClearAllData}
                 onUpdateUser={handleUpdateProfile}
-                onBuildGoogleSheet={handleBuildGoogleSheet}
-                onSyncGoogleSheet={handleSyncGoogleSheet}
-                onUnlinkGoogleSheet={handleUnlinkGoogleSheet}
-                onToggleAutoSyncGoogleSheet={handleToggleAutoSyncGoogleSheet}
-                isGoogleSheetSyncing={isGoogleSheetSyncing}
-                isGoogleSheetCreating={isGoogleSheetCreating}
               />
             )}
           </motion.div>

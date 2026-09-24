@@ -16,7 +16,9 @@ import {
 } from '../utils/attendanceCalculations';
 import {
   Check,
+  CheckCheck,
   X as XIcon,
+  XCircle,
   Clock3,
   CheckCircle2,
   AlertTriangle,
@@ -54,6 +56,7 @@ interface DashboardViewProps {
   isSignedIn?: boolean;
   onSignIn?: () => void;
   onMarkAttendance: (date: string, classIndex: number, status: AttendanceStatus, note?: string) => Promise<void>;
+  onMarkAllAttendance?: (date: string, status: AttendanceStatus) => Promise<void>;
   onNavigateTab: (tab: 'calendar' | 'timetable' | 'subjects') => void;
   onSaveDailySchedule?: (
     date: string,
@@ -75,6 +78,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   isSignedIn = false,
   onSignIn,
   onMarkAttendance,
+  onMarkAllAttendance,
   onNavigateTab,
   onSaveDailySchedule,
   onClearDaySchedule,
@@ -89,7 +93,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [activeNoteIndex, setActiveNoteIndex] = useState<number | null>(null);
   const [noteInput, setNoteInput] = useState('');
   const [markingIndex, setMarkingIndex] = useState<number | null>(null);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [isConfirmingClearToday, setIsConfirmingClearToday] = useState(false);
+
+  const handleBatchMark = async (status: AttendanceStatus) => {
+    if (!onMarkAllAttendance || todayClasses.length === 0) return;
+    setIsMarkingAll(true);
+    try {
+      await onMarkAllAttendance(todayStr, status);
+    } finally {
+      setIsMarkingAll(false);
+    }
+  };
 
   // Filter for today's classes: default to 'remaining' so only unmarked classes are shown on home tab
   const [classFilter, setClassFilter] = useState<'remaining' | 'completed' | 'all'>('remaining');
@@ -516,6 +531,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Quick Batch Attendance Bar: Present All & Absent All */}
+        {todayClasses.length > 0 && !isTodayDayOff && !isTodayWeekend && onMarkAllAttendance && (
+          <div className="flex items-center justify-between gap-3 p-3 bg-gradient-to-r from-gray-50 via-white to-gray-50 border border-gray-200/90 rounded-2xl shadow-2xs flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-gray-900 text-white flex items-center justify-center text-xs font-bold shadow-2xs">
+                ⚡
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-900 leading-tight">Quick Attendance</p>
+                <p className="text-[11px] text-gray-500 leading-tight">
+                  Mark all {todayClasses.length} {todayClasses.length === 1 ? 'class' : 'classes'} in one click
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-present-all-today"
+                onClick={() => handleBatchMark('present')}
+                disabled={isMarkingAll}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                title="Mark all today's classes as Present"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span>{isMarkingAll ? 'Marking...' : 'Present All'}</span>
+              </button>
+
+              <button
+                id="btn-absent-all-today"
+                onClick={() => handleBatchMark('absent')}
+                disabled={isMarkingAll}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.97] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                title="Mark all today's classes as Absent"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>{isMarkingAll ? 'Marking...' : 'Absent All'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {todayClasses.length === 0 ? (
           <div

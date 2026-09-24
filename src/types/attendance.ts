@@ -71,11 +71,6 @@ export interface UserProfile {
   role?: 'student' | 'teacher' | 'admin';
   weekendDays?: number[]; // [0, 6] for Sat & Sun, [0] for Sun, etc. (0 = Sunday, 6 = Saturday)
   targetPercentage?: number; // e.g. 75, 80, 85
-  googleSpreadsheetId?: string;
-  googleSpreadsheetUrl?: string;
-  googleSpreadsheetName?: string;
-  lastGoogleSheetSyncTime?: string;
-  autoSyncGoogleSheets?: boolean;
   createdAt?: string;
 }
 

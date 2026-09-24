@@ -18,7 +18,9 @@ import {
   CalendarDays,
   AlertTriangle,
   Check,
+  CheckCheck,
   X as XIcon,
+  XCircle,
   Clock3,
   Clock,
   Sparkles,
@@ -35,6 +37,7 @@ interface CalendarViewProps {
   isSignedIn?: boolean;
   onSignIn?: () => void;
   onMarkAttendance: (date: string, classIndex: number, status: AttendanceStatus, note?: string) => Promise<void>;
+  onMarkAllAttendance?: (date: string, status: AttendanceStatus) => Promise<void>;
   onNavigateTab: (tab: 'timetable' | 'dashboard') => void;
   onSaveDailySchedule?: (
     date: string,
@@ -52,6 +55,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   isSignedIn = false,
   onSignIn,
   onMarkAttendance,
+  onMarkAllAttendance,
   onNavigateTab,
   onSaveDailySchedule,
   onClearDaySchedule,
@@ -61,6 +65,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [isConfirmingClearDate, setIsConfirmingClearDate] = useState(false);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
+
+  const handleBatchMark = async (status: AttendanceStatus) => {
+    if (!onMarkAllAttendance) return;
+    setIsMarkingAll(true);
+    try {
+      await onMarkAllAttendance(selectedDate, status);
+    } finally {
+      setIsMarkingAll(false);
+    }
+  };
 
   const selectedDoc = useMemo(
     () => attendanceDocs.find((d) => d.date === selectedDate),
@@ -611,7 +626,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </div>
               </div>
             ) : (
-              selectedDoc.classes.map((cls, idx) => {
+              <>
+                {onMarkAllAttendance && (
+                  <div className="flex items-center justify-between gap-2 p-2.5 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-xs font-semibold text-gray-700">Quick Mark All:</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleBatchMark('present')}
+                        disabled={isMarkingAll}
+                        className="min-h-[34px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                        title="Mark all classes on this date as Present"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>{isMarkingAll ? 'Updating...' : 'Present All'}</span>
+                      </button>
+                      <button
+                        onClick={() => handleBatchMark('absent')}
+                        disabled={isMarkingAll}
+                        className="min-h-[34px] px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                        title="Mark all classes on this date as Absent"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>{isMarkingAll ? 'Updating...' : 'Absent All'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {selectedDoc.classes.map((cls, idx) => {
                 const isPresent = cls.status === 'present';
                 const isAbsent = cls.status === 'absent';
 
@@ -691,8 +732,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
+            </>
+          )}
           </div>
         </div>
       </div>

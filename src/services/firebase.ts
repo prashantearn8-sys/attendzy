@@ -56,58 +56,11 @@ export const db = (() => {
 })();
 export const auth = getAuth(app);
 
-// Workspace OAuth Scopes for Google Sheets & Google Drive (requested on-demand only)
-export const WORKSPACE_SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file',
-];
-
 // Configure standard Google Auth Provider for basic user login (email, profile, openid)
-// Standard login does NOT request sensitive Sheets scopes to avoid Error 403: access_denied
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
-
-// Configure on-demand Google Sheets Provider (used ONLY when user clicks sync/build Google Sheet)
-export const googleSheetsProvider = new GoogleAuthProvider();
-googleSheetsProvider.setCustomParameters({
-  prompt: 'consent',
-});
-WORKSPACE_SCOPES.forEach((scope) => googleSheetsProvider.addScope(scope));
-
-// In-Memory cache for the Google OAuth access token (never persisted to localStorage)
-let cachedGoogleAccessToken: string | null = null;
-
-export function getCachedGoogleAccessToken(): string | null {
-  return cachedGoogleAccessToken;
-}
-
-export function setCachedGoogleAccessToken(token: string | null) {
-  cachedGoogleAccessToken = token;
-}
-
-export async function getOrRequestGoogleAccessToken(): Promise<string> {
-  if (cachedGoogleAccessToken) {
-    return cachedGoogleAccessToken;
-  }
-  try {
-    const result = await signInWithPopup(auth, googleSheetsProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Google Sheets permission was not granted. Please allow access.');
-    }
-    cachedGoogleAccessToken = credential.accessToken;
-    return cachedGoogleAccessToken;
-  } catch (error: any) {
-    if (error?.message?.includes('access_denied') || error?.code === 'auth/popup-closed-by-user') {
-      throw new Error(
-        'Google Sheets access was denied. If your Google Cloud OAuth consent screen is in Testing mode, ensure your email is added under "Test Users" in Google Cloud Console, or publish the app to Production.'
-      );
-    }
-    throw error;
-  }
-}
 
 export enum OperationType {
   CREATE = 'create',
@@ -181,10 +134,6 @@ export async function signInWithGoogleFirebase(preferRedirect = false): Promise<
   try {
     const result = await signInWithPopup(auth, googleProvider);
     if (result && result.user) {
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        cachedGoogleAccessToken = credential.accessToken;
-      }
       return await buildAndPersistUserProfile(result.user);
     }
     return null;
@@ -213,10 +162,6 @@ export async function checkRedirectAuthResult(): Promise<UserProfile | null> {
   try {
     const result = await getRedirectResult(auth);
     if (result && result.user) {
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        cachedGoogleAccessToken = credential.accessToken;
-      }
       return await buildAndPersistUserProfile(result.user);
     }
   } catch (err) {
@@ -238,7 +183,6 @@ export function subscribeToAuthChanges(callback: (user: UserProfile | null) => v
         callback(null);
       }
     } else {
-      cachedGoogleAccessToken = null;
       callback(null);
     }
   });
@@ -249,7 +193,6 @@ export function subscribeToAuthChanges(callback: (user: UserProfile | null) => v
  */
 export async function signOutFirebase(): Promise<void> {
   try {
-    cachedGoogleAccessToken = null;
     localStorage.removeItem('attendzy_auth_user');
     await fbSignOut(auth);
   } catch (err) {
@@ -279,11 +222,6 @@ export async function buildAndPersistUserProfile(fbUser: FirebaseUser): Promise<
       if (typeof existingData.targetPercentage === 'number') profile.targetPercentage = existingData.targetPercentage;
       if (Array.isArray(existingData.weekendDays)) profile.weekendDays = existingData.weekendDays;
       if (existingData.role) profile.role = existingData.role;
-      if (existingData.googleSpreadsheetId) profile.googleSpreadsheetId = existingData.googleSpreadsheetId;
-      if (existingData.googleSpreadsheetUrl) profile.googleSpreadsheetUrl = existingData.googleSpreadsheetUrl;
-      if (existingData.googleSpreadsheetName) profile.googleSpreadsheetName = existingData.googleSpreadsheetName;
-      if (existingData.lastGoogleSheetSyncTime) profile.lastGoogleSheetSyncTime = existingData.lastGoogleSheetSyncTime;
-      if (typeof existingData.autoSyncGoogleSheets === 'boolean') profile.autoSyncGoogleSheets = existingData.autoSyncGoogleSheets;
     }
     await setDoc(userRef, profile, { merge: true });
     localStorage.setItem('attendzy_auth_user', JSON.stringify(profile));
@@ -1021,6 +959,142 @@ export async function markAttendance(
         updatedAt: new Date().toISOString(),
       });
     }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+/**
+ * Batch Attendance Marking: Mark all classes for a specific date as Present, Absent, or Unmarked
+ */
+export async function markAllAttendanceForDate(
+  userId: string,
+  date: string,
+  newStatus: AttendanceStatus
+): Promise<void> {
+  if (isGuestUser(userId)) {
+    const currentDocs = getGuestAttendanceDocs();
+    const docItem = currentDocs.find((d) => d.date === date);
+    if (!docItem || !docItem.classes || docItem.classes.length === 0) return;
+
+    const guestSubjects = getGuestSubjects();
+    const nowIso = new Date().toISOString();
+
+    docItem.classes = docItem.classes.map((cls) => {
+      if (cls.status === 'cancelled') return cls;
+      const previousStatus = cls.status;
+      const updatedCls = {
+        ...cls,
+        status: newStatus,
+        markedAt: nowIso,
+      };
+
+      const matchIdx = guestSubjects.findIndex((s) => {
+        const matchById = cls.subjectId && s.id === cls.subjectId;
+        const matchByName = (s.name || '').trim().toLowerCase() === (cls.subjectName || '').trim().toLowerCase();
+        return matchById || matchByName;
+      });
+
+      if (matchIdx !== -1) {
+        let total = Number(guestSubjects[matchIdx].totalClasses) || 0;
+        let attended = Number(guestSubjects[matchIdx].attendedClasses) || 0;
+
+        if (previousStatus === 'present' || previousStatus === 'late') {
+          attended = Math.max(0, attended - 1);
+        }
+        if (previousStatus !== null && (previousStatus as string) !== 'cancelled') {
+          total = Math.max(0, total - 1);
+        }
+        if (newStatus === 'present' || newStatus === 'late') {
+          attended += 1;
+        }
+        if (newStatus !== null) {
+          total += 1;
+        }
+        guestSubjects[matchIdx].totalClasses = total;
+        guestSubjects[matchIdx].attendedClasses = attended;
+      }
+
+      return updatedCls;
+    });
+
+    docItem.updatedAt = nowIso;
+    setGuestAttendanceDocs(currentDocs);
+    setGuestSubjects(guestSubjects);
+    return;
+  }
+
+  const path = `users/${userId}/attendance/${date}`;
+  try {
+    const docRef = doc(db, 'users', userId, 'attendance', date);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return;
+
+    const data = docSnap.data() as AttendanceDayDoc;
+    if (!data.classes || data.classes.length === 0) return;
+
+    const subjectsSnap = await getDocs(collection(db, 'users', userId, 'subjects'));
+    const subjectDocs = subjectsSnap.docs.map((d) => ({
+      ref: d.ref,
+      id: d.id,
+      data: d.data() as Subject,
+    }));
+
+    const nowIso = new Date().toISOString();
+    const batch = writeBatch(db);
+
+    const updatedClasses = data.classes.map((cls) => {
+      if (cls.status === 'cancelled') return cls;
+      const previousStatus = cls.status;
+
+      const targetSub = subjectDocs.find((sDoc) => {
+        const s = sDoc.data;
+        const matchById = (cls.subjectId && sDoc.id === cls.subjectId) || (s.id && s.id === cls.subjectId);
+        const matchByName = (s.name || '').trim().toLowerCase() === (cls.subjectName || '').trim().toLowerCase();
+        return matchById || matchByName;
+      });
+
+      if (targetSub) {
+        let total = Number(targetSub.data.totalClasses) || 0;
+        let attended = Number(targetSub.data.attendedClasses) || 0;
+
+        if (previousStatus === 'present' || previousStatus === 'late') {
+          attended = Math.max(0, attended - 1);
+        }
+        if (previousStatus !== null && (previousStatus as string) !== 'cancelled') {
+          total = Math.max(0, total - 1);
+        }
+        if (newStatus === 'present' || newStatus === 'late') {
+          attended += 1;
+        }
+        if (newStatus !== null) {
+          total += 1;
+        }
+
+        targetSub.data.totalClasses = total;
+        targetSub.data.attendedClasses = attended;
+      }
+
+      return {
+        ...cls,
+        status: newStatus,
+        markedAt: nowIso,
+      };
+    });
+
+    for (const subDoc of subjectDocs) {
+      batch.update(subDoc.ref, {
+        totalClasses: subDoc.data.totalClasses,
+        attendedClasses: subDoc.data.attendedClasses,
+      });
+    }
+
+    batch.update(docRef, {
+      classes: updatedClasses,
+      updatedAt: nowIso,
+    });
+
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

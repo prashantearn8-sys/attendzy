@@ -7,9 +7,6 @@ import {
 } from '../types/attendance';
 import {
   LogOut,
-  Download,
-  FileSpreadsheet,
-  Database,
   Trash2,
   CheckCircle2,
   User,
@@ -20,13 +17,7 @@ import {
   Award,
   ShieldCheck,
   AlertCircle,
-  ExternalLink,
-  RefreshCw,
-  Link2,
-  Unlink,
-  Sparkles,
   ArrowRight,
-  Sheet,
 } from 'lucide-react';
 import {
   WEEK_DAYS_LIST,
@@ -48,12 +39,6 @@ interface SettingsViewProps {
   onSignOut: () => void;
   onClearAllData?: () => Promise<void>;
   onUpdateUser?: (updated: UserProfile) => void;
-  onBuildGoogleSheet?: () => Promise<void>;
-  onSyncGoogleSheet?: () => Promise<void>;
-  onUnlinkGoogleSheet?: () => Promise<void>;
-  onToggleAutoSyncGoogleSheet?: (enabled: boolean) => Promise<void>;
-  isGoogleSheetSyncing?: boolean;
-  isGoogleSheetCreating?: boolean;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -68,12 +53,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSignIn,
   onSignOut,
   onClearAllData,
-  onBuildGoogleSheet,
-  onSyncGoogleSheet,
-  onUnlinkGoogleSheet,
-  onToggleAutoSyncGoogleSheet,
-  isGoogleSheetSyncing = false,
-  isGoogleSheetCreating = false,
 }) => {
   const [isClearing, setIsClearing] = useState(false);
   const [clearSuccess, setClearSuccess] = useState(false);
@@ -125,46 +104,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isSatSun =
     weekendDays.length === 2 && weekendDays.includes(0) && weekendDays.includes(6);
   const isSunOnly = weekendDays.length === 1 && weekendDays.includes(0);
-
-  // Export JSON
-  const handleExportJSON = () => {
-    const data = {
-      user,
-      subjects,
-      timetables,
-      attendance: attendanceDocs,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendease-export-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Export CSV
-  const handleExportCSV = () => {
-    const rows: string[] = ['Date,Subject Name,Start Time,End Time,Room,Status,Marked At,Note'];
-
-    attendanceDocs.forEach((doc) => {
-      doc.classes.forEach((c) => {
-        rows.push(
-          `"${doc.date}","${c.subjectName}","${c.startTime}","${c.endTime}","${c.room || ''}","${c.status || 'unmarked'}","${c.markedAt || ''}","${(c.note || '').replace(/"/g, '""')}"`
-        );
-      });
-    });
-
-    const csvContent = rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendease-attendance-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   const handleClear = async () => {
     if (!onClearAllData) return;
@@ -485,225 +424,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 : `Set your goal to ${targetPercentage}%. Individual bunk margins and attendance requirements are computed separately for each subject.`}
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* Google Sheets Live Linked Spreadsheet */}
-      <div id="settings-google-sheets-card" className="bg-white border border-emerald-200/90 rounded-2xl p-5 sm:p-6 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-gray-900">Google Sheets Live Sync</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Google Workspace
-                </span>
-              </div>
-              <p className="text-xs text-gray-500">
-                Live attendance spreadsheet created and saved in your Gmail Google Drive
-              </p>
-            </div>
-          </div>
-
-          {user?.googleSpreadsheetId && (
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live Linked
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Not Signed in with Google State */}
-        {!user || user.id.startsWith('guest_') ? (
-          <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-gray-800">Sign in with your Google account</p>
-              <p className="text-xs text-gray-600 max-w-lg">
-                Connect your Gmail account to automatically create and sync a dedicated Google Sheet with live subject quotas, bunk allowances, and daily logs.
-              </p>
-            </div>
-            <button
-              onClick={onSignIn}
-              className="min-h-[40px] px-4 py-2 rounded-xl bg-gray-900 hover:bg-black text-xs font-bold text-white transition-colors flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-xs"
-            >
-              <span>Sign in with Google</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        ) : !user.googleSpreadsheetId ? (
-          /* Signed In, but Spreadsheet Not Built Yet */
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100 text-xs text-emerald-900 space-y-2">
-              <p className="font-semibold flex items-center gap-1.5 text-emerald-950">
-                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>One-click Google Drive spreadsheet integration</span>
-              </p>
-              <p className="text-emerald-800 leading-relaxed">
-                We will build a spreadsheet named <span className="font-semibold">"Attendzy - Live Attendance ({user.name})"</span> directly inside your Google Drive account (<span className="font-mono text-[11px] bg-white/80 px-1 py-0.5 rounded border border-emerald-200">{user.email}</span>) with two formatted tabs:
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
-                <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-200/70">
-                  <span className="font-bold text-emerald-950 block">1. Live Subject Stats Tab</span>
-                  <span className="text-gray-600">Calculates Attended/Total, exact %, Status, and how many classes you can safely bunk or must attend.</span>
-                </div>
-                <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-200/70">
-                  <span className="font-bold text-emerald-950 block">2. Daily Attendance Log Tab</span>
-                  <span className="text-gray-600">Full chronological breakdown with date, weekday, subject, status, time slots, and notes.</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <button
-                id="btn-build-google-sheet"
-                onClick={onBuildGoogleSheet}
-                disabled={isGoogleSheetCreating}
-                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow disabled:opacity-60"
-              >
-                {isGoogleSheetCreating ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Building Spreadsheet in your Drive...</span>
-                  </>
-                ) : (
-                  <>
-                    <FileSpreadsheet className="w-4 h-4" />
-                    <span>Build Live Spreadsheet in Google Sheets</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Spreadsheet is Linked and Active */
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-gray-900">
-                    {user.googleSpreadsheetName || 'Attendzy - Live Attendance'}
-                  </span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-md">
-                    Connected
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 font-mono text-[11px] truncate max-w-md">
-                  Google Drive Account: <span className="text-gray-800 font-semibold">{user.email}</span>
-                </p>
-                {user.lastGoogleSheetSyncTime && (
-                  <p className="text-[11px] text-gray-500">
-                    Last live synced: <span className="font-medium text-gray-700">{new Date(user.lastGoogleSheetSyncTime).toLocaleString()}</span>
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                {user.googleSpreadsheetUrl && (
-                  <a
-                    href={user.googleSpreadsheetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    id="btn-open-google-sheet"
-                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                  >
-                    <span>Open in Google Sheets</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-
-                <button
-                  id="btn-sync-google-sheet-now"
-                  onClick={onSyncGoogleSheet}
-                  disabled={isGoogleSheetSyncing}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white hover:bg-gray-100 border border-gray-300 text-xs font-semibold text-gray-800 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-gray-600 ${isGoogleSheetSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isGoogleSheetSyncing ? 'Syncing...' : 'Sync Now'}</span>
-                </button>
-
-                <button
-                  id="btn-unlink-google-sheet"
-                  onClick={onUnlinkGoogleSheet}
-                  title="Unlink this spreadsheet from Attendzy"
-                  className="min-h-[38px] px-2.5 py-1.5 rounded-xl text-gray-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 text-xs transition-colors cursor-pointer"
-                >
-                  <Unlink className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Auto Sync Toggle */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/40 border border-emerald-100">
-              <div className="space-y-0.5">
-                <span className="text-xs font-bold text-gray-900 block">Auto-Sync on Attendance Changes</span>
-                <span className="text-[11px] text-gray-600 block">
-                  Automatically updates your Google Sheet whenever you mark present, absent, or edit classes in Attendzy.
-                </span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
-                <input
-                  type="checkbox"
-                  checked={user.autoSyncGoogleSheets !== false}
-                  onChange={(e) => onToggleAutoSyncGoogleSheet && onToggleAutoSyncGoogleSheet(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-              </label>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Data Export Card */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <div>
-          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-            <Download className="w-5 h-5 text-gray-900" />
-            <span>Export Attendance Records</span>
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          <button
-            onClick={handleExportCSV}
-            className="min-h-[44px] p-4 rounded-xl bg-gray-50 hover:bg-white border border-gray-200 hover:border-gray-400 text-left transition-all flex items-center justify-between group active:scale-[0.98] shadow-xs"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <FileSpreadsheet className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">
-                  Spreadsheet (CSV)
-                </h4>
-                <p className="text-xs text-gray-500">Excel / Sheets compatible log</p>
-              </div>
-            </div>
-            <Download className="w-4 h-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
-          </button>
-
-          <button
-            onClick={handleExportJSON}
-            className="min-h-[44px] p-4 rounded-xl bg-gray-50 hover:bg-white border border-gray-200 hover:border-gray-400 text-left transition-all flex items-center justify-between group active:scale-[0.98] shadow-xs"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gray-200 text-gray-800 flex items-center justify-center">
-                <Database className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">
-                  Full Backup (JSON)
-                </h4>
-                <p className="text-xs text-gray-500">Subjects + Schedules + Marks</p>
-              </div>
-            </div>
-            <Download className="w-4 h-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
-          </button>
         </div>
       </div>
 

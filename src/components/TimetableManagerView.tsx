@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  CheckCheck,
   Upload,
   AlertCircle,
   FileImage,
@@ -29,6 +30,7 @@ import {
   Calendar,
   Lock,
   LogIn,
+  XCircle,
 } from 'lucide-react';
 
 interface TimetableManagerViewProps {
@@ -55,6 +57,7 @@ interface TimetableManagerViewProps {
     classIndex: number,
     status: 'present' | 'absent' | 'cancelled' | null
   ) => Promise<void>;
+  onMarkAllAttendance?: (date: string, status: any) => Promise<void>;
 }
 
 export const TimetableManagerView: React.FC<TimetableManagerViewProps> = ({
@@ -68,6 +71,7 @@ export const TimetableManagerView: React.FC<TimetableManagerViewProps> = ({
   onClearDaySchedule,
   onToggleDayOff,
   onMarkAttendance,
+  onMarkAllAttendance,
 }) => {
   const todayIso = formatDateToISO();
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
@@ -855,8 +859,32 @@ export const TimetableManagerView: React.FC<TimetableManagerViewProps> = ({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {dayClasses.map((item, idx) => (
+          <div className="space-y-3">
+            {onMarkAllAttendance && dayClasses.length > 0 && !isCurrentDayOff && !isWeekend && (
+              <div className="flex items-center justify-between gap-3 p-3 bg-white rounded-2xl border border-gray-200/90 shadow-2xs flex-wrap">
+                <span className="text-xs font-semibold text-gray-700">Quick Mark Attendance ({dayClasses.length} {dayClasses.length === 1 ? 'class' : 'classes'}):</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onMarkAllAttendance(selectedDate, 'present')}
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer active:scale-95"
+                    title="Mark all classes on this date as Present"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    <span>Present All</span>
+                  </button>
+                  <button
+                    onClick={() => onMarkAllAttendance(selectedDate, 'absent')}
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer active:scale-95"
+                    title="Mark all classes on this date as Absent"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    <span>Absent All</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {dayClasses.map((item, idx) => (
               <motion.div
                 layout
                 initial={{ opacity: 0, y: 6 }}
@@ -964,6 +992,7 @@ export const TimetableManagerView: React.FC<TimetableManagerViewProps> = ({
                 )}
               </motion.div>
             ))}
+            </div>
           </div>
         )}
       </div>
