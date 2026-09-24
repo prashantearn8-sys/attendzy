@@ -186,9 +186,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight font-['Plus_Jakarta_Sans',sans-serif]">
             Attendance Overview
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500">
-            Real-time semester attendance metrics, subject quotas, and daily class log.
-          </p>
         </div>
       </div>
 
@@ -499,39 +496,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Day Off Indicator Banner */}
-        <AnimatePresence>
-          {isTodayDayOff && (
-            <motion.div
-              initial={{ opacity: 0, y: -10, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.98 }}
-              transition={{ duration: 0.2 }}
-              className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shadow-2xs"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                  <Coffee className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-amber-950">Today is marked as Day Off</h4>
-                  <p className="text-[11px] text-amber-800">
-                    Classes for today are excused and will not count against your attendance target.
-                  </p>
-                </div>
-              </div>
-              {onToggleDayOff && (
-                <button
-                  onClick={() => onToggleDayOff(todayStr)}
-                  className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-white/80 hover:bg-white rounded-lg border border-amber-300 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Quick Batch Attendance Bar: Present All & Absent All */}
         {todayClasses.length > 0 && !isTodayDayOff && !isTodayWeekend && onMarkAllAttendance && (
           <div className="flex items-center justify-between gap-3 p-3 bg-gradient-to-r from-gray-50 via-white to-gray-50 border border-gray-200/90 rounded-2xl shadow-2xs flex-wrap">
@@ -642,9 +606,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <h3 className="text-base sm:text-lg font-bold text-gray-900">
                 All classes marked for today!
               </h3>
-              <p className="text-xs sm:text-sm text-gray-600 max-w-md mx-auto">
-                You've marked all {todayClasses.length} classes scheduled for today ({completedClasses.filter((c) => c.status === 'present').length} Present, {completedClasses.filter((c) => c.status === 'absent').length} Missed).
-              </p>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-1 flex-wrap">
               <button

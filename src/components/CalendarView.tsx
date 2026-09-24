@@ -171,9 +171,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <CalendarIcon className="w-6 h-6 text-gray-900" />
             <span>Monthly Attendance Calendar</span>
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            Track daily class statuses, review past attendance, and catch unmarked days.
-          </p>
         </div>
 
         {/* Month Navigator & Actions */}
@@ -533,31 +530,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 {selectedDoc?.classes?.length || 0} classes
               </span>
             </div>
-
-            {/* Day Off Indicator Banner */}
-            {isCurrentDayOff && (
-              <div className="mt-2.5 p-3 rounded-xl bg-amber-50/90 border border-amber-200 flex items-center justify-between gap-2 shadow-2xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                    <Coffee className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-amber-950">Marked as Day Off</p>
-                    <p className="text-[11px] text-amber-800">
-                      Classes for this day are excused and do not penalize your attendance quota.
-                    </p>
-                  </div>
-                </div>
-                {onToggleDayOff && (
-                  <button
-                    onClick={() => onToggleDayOff(selectedDate)}
-                    className="text-[11px] font-semibold text-amber-900 hover:text-amber-950 underline cursor-pointer shrink-0"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Class List for Selected Day */}
