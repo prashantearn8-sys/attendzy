@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
   doc,
   getDoc,
   setDoc,
@@ -43,9 +44,17 @@ import {
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with specific database ID if configured, or default
-export const db = (firebaseConfig as any).firestoreDatabaseId
-  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
-  : getFirestore(app);
+// Auto-detect long polling ensures reliable connectivity in browser iframes and proxies
+export const db = (() => {
+  const dbId = (firebaseConfig as any).firestoreDatabaseId;
+  try {
+    return dbId
+      ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, dbId)
+      : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  } catch {
+    return dbId ? getFirestore(app, dbId) : getFirestore(app);
+  }
+})();
 export const auth = getAuth(app);
 
 // Workspace OAuth Scopes for Google Sheets & Google Drive (requested on-demand only)
@@ -154,9 +163,12 @@ export async function testFirestoreConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase Firestore client appears offline, will sync when reconnected.');
+  } catch (error: any) {
+    if (
+      (error instanceof Error && error.message.includes('the client is offline')) ||
+      error?.code === 'unavailable'
+    ) {
+      console.warn('Firebase Firestore client in offline/buffering mode, will automatically sync with cloud backend.');
     }
     return false;
   }
