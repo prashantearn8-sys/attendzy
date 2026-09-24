@@ -21,7 +21,6 @@ import {
   query,
   getDocs,
   onSnapshot,
-  getDocFromServer,
   writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -158,22 +157,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection test on boot
+// Connection check helper
 export async function testFirestoreConnection(): Promise<boolean> {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    const testRef = doc(db, 'test', 'connection');
+    await getDoc(testRef);
     return true;
   } catch (error: any) {
-    if (
-      (error instanceof Error && error.message.includes('the client is offline')) ||
-      error?.code === 'unavailable'
-    ) {
-      console.warn('Firebase Firestore client in offline/buffering mode, will automatically sync with cloud backend.');
-    }
+    // Gracefully handle offline / initializing state
     return false;
   }
 }
-testFirestoreConnection();
 
 /**
  * Sign in using Firebase Google Auth
@@ -504,7 +498,7 @@ export function subscribeToSubjects(
         onUpdate(uniqueList);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, OperationType.LIST, path);
       }
     );
   };
@@ -741,7 +735,7 @@ export function subscribeToTimetables(
         onUpdate(list);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, OperationType.LIST, path);
       }
     );
   };
@@ -874,7 +868,7 @@ export function subscribeToAttendanceDocs(
         onUpdate(list);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, OperationType.LIST, path);
       }
     );
   };

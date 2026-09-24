@@ -22,7 +22,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     // User Root Document & Subcollections
@@ -33,24 +33,37 @@ service cloud.firestore {
       // Subjects Subcollection
       // Path: /users/{userId}/subjects/{subjectId}
       match /subjects/{subjectId} {
-        allow read, write: if isOwner(userId) && isValidId(subjectId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(subjectId);
+        allow delete: if isOwner(userId);
       }
 
       // Timetables Subcollection
       // Path: /users/{userId}/timetables/{timetableId}
       match /timetables/{timetableId} {
-        allow read, write: if isOwner(userId) && isValidId(timetableId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(timetableId);
+        allow delete: if isOwner(userId);
       }
 
       // Daily Attendance Subcollection
       // Path: /users/{userId}/attendance/{date}
       match /attendance/{date} {
-        allow read, write: if isOwner(userId) && isValidId(date);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(date);
+        allow delete: if isOwner(userId);
       }
 
       // Legacy fallback subcollection for app backwards compatibility
       match /attendance_data/{dataId} {
-        allow read, write: if isOwner(userId) && isValidId(dataId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(dataId);
+        allow delete: if isOwner(userId);
+      }
+
+      // User subcollections fallback
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId);
       }
     }
   }
